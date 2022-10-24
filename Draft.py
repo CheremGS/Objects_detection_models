@@ -31,5 +31,3 @@ transform = A.Compose([A.Resize(512, 512),
 sample = transform(image=image,
                    bboxes=bbox,
                     labels=labs)
-
-print(sample)
