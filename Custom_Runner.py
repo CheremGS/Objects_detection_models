@@ -1,10 +1,8 @@
 import torch
 from catalyst import dl
 
-
 class CenterNetDetectionRunner(dl.Runner):
     """Runner for CenterNet models."""
-
     def handle_batch(self, batch):
         """Do a forward pass and compute loss.
 
@@ -23,9 +21,6 @@ class CenterNetDetectionRunner(dl.Runner):
 
         self.batch["predicted_heatmap"] = heatmaps
         self.batch["predicted_regression"] = regression
-
-        # self.batch["heatmap"] = heatmaps
-        # self.batch["regression"] = regression
 
         self.batch_metrics["mask_loss"] = mask_loss.item()
         self.batch_metrics["regression_loss"] = regression_loss.item()

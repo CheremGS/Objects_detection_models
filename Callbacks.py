@@ -103,12 +103,12 @@ def pred2box(heatmap, regr, threshold=0.5, scale=4, input_size=512):
         scores[i] = heatmap[y, x]
         # x, y in segmentation scales -> upscale outputs
         sx, sy = int(x * scale), int(y * scale)
-        w, h = (regr[:, y, x] * input_size).astype(int)
+        w, h = (regr[:, y, x]).astype(int)
         # all boxes coordinates must be in range (0, input_size)
-        boxes[i, 0] = np.clip(sx - w // 2, 0, input_size)
-        boxes[i, 1] = np.clip(sy - h // 2, 0, input_size)
-        boxes[i, 2] = np.clip(sx + w // 2, 0, input_size)
-        boxes[i, 3] = np.clip(sy + h // 2, 0, input_size)
+        boxes[i, 0] = sx - w // 2
+        boxes[i, 1] = sy - h // 2
+        boxes[i, 2] = sx + w // 2
+        boxes[i, 3] = sy + h // 2
     return np.array(boxes), np.array(scores)
 
 
@@ -119,6 +119,7 @@ def process_centernet_output(
     gt_labels,
     confidence_threshold=0.5,
     iou_threshold=0.5,
+    mode = "train"
 ):
     """Generate bbox and classes from CenterNet model outputs.
 
@@ -189,13 +190,16 @@ def process_centernet_output(
         )
         pred_sample = pred_sample.astype(np.float32)
 
-        sample_gt_bboxes = gt_boxes[i].detach().cpu()
-        sample_gt_classes = gt_labels[i].detach().cpu()
-        gt_sample = np.zeros((sample_gt_classes.shape[0], 7), dtype=np.float32)
-        gt_sample[:, :4] = sample_gt_bboxes
-        gt_sample[:, 4] = sample_gt_classes
+        if mode == "train":
+            sample_gt_bboxes = gt_boxes[i].detach().cpu()
+            sample_gt_classes = gt_labels[i].detach().cpu()
+            gt_sample = np.zeros((sample_gt_classes.shape[0], 7), dtype=np.float32)
+            gt_sample[:, :4] = sample_gt_bboxes
+            gt_sample[:, 4] = sample_gt_classes
+            yield pred_sample, gt_sample
 
-        yield pred_sample, gt_sample
+        else:
+            yield pred_sample
 
 
 def process_yolo_x_output(
@@ -288,7 +292,7 @@ class DetectionMeanAveragePrecision(Callback):
         self.confidence_threshold = confidence_threshold
 
         self.metric_fn = MetricBuilder.build_evaluation_metric(
-            "map_2d", async_mode=False, num_classes=num_classes, iou_threshold=iou_threshold
+            "map_2d", async_mode=False, num_classes=num_classes
         )
 
     def on_loader_start(self, runner: "IRunner"):  # noqa: D102, F821
@@ -314,19 +318,15 @@ class DetectionMeanAveragePrecision(Callback):
             gt_box = runner.batch["boxes"]
             p_regression = runner.batch["predicted_regression"]
             gt_labels = runner.batch["labels"]
-            # for predicted_sample, ground_truth_sample in process_centernet_output(
-            #     p_heatmap,
-            #     p_regression,
-            #     gt_box,
-            #     gt_labels,
-            #     iou_threshold=self.iou_threshold,
-            #     confidence_threshold=self.confidence_threshold,
-            # ):
-            predicted_sample = np.array([[400, 500, 450, 550, 6, 0.27],
-                                      [300, 400, 350, 450, 6, 0.37]], dtype="float64")
-            ground_truth_sample = np.array([[300, 400, 420, 520, 6, 0.0, 0.0],
-                                        [400, 500, 500, 600, 0, 0.0, 0.0]], dtype="float64")
-            self.metric_fn.add(predicted_sample, ground_truth_sample)
+            for predicted_sample, ground_truth_sample in process_centernet_output(
+                p_heatmap,
+                p_regression,
+                gt_box,
+                gt_labels,
+                iou_threshold=self.iou_threshold,
+                confidence_threshold=self.confidence_threshold,
+            ):
+                self.metric_fn.add(predicted_sample, ground_truth_sample)
         elif self.output_type == "yolo-x":
             p_tensor = runner.batch["predicted_tensor"]
             gt_box = runner.batch["bboxes"]

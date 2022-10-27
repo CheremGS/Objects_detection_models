@@ -117,11 +117,12 @@ class CenterNetCriterion(nn.Module):
         mask_loss = neg_loss(pred_mask, target_heatmap)
         mask_loss *= self.mask_loss_weight
 
+        predicted_regr = torch.sigmoid(predicted_regr)
         regr_loss = (
             torch.abs(predicted_regr - target_regr).sum(1)[:, None, :, :]
             * target_heatmap
-        ).sum()  # .sum(1).sum(1).sum(1)
-        regr_loss = regr_loss / target_heatmap.sum()  # .sum(1).sum(1).sum(1)
+        ).sum() # .sum(1).sum(1).sum(1)
+        regr_loss = regr_loss / target_heatmap.sum() #.sum(1).sum(1).sum(1)
         regr_loss *= self.regr_loss_weight
 
         loss = mask_loss + regr_loss

@@ -4,6 +4,7 @@ import os
 import torch
 from torch.utils.data import Dataset
 import xml.etree.ElementTree as ET
+import matplotlib.pyplot as plt
 
 
 def draw_msra_gaussian(heatmap, channel, center, sigma=2):
@@ -37,9 +38,11 @@ def draw_msra_gaussian(heatmap, channel, center, sigma=2):
         heatmap[channel, img_y[0]:img_y[1], img_x[0]:img_x[1]],
         g[g_y[0]:g_y[1], g_x[0]:g_x[1]],
     )
+    plt.imshow(heatmap[channel])
+    plt.show()
 
 
-class AirDataGenerator(Dataset):
+class CenterNetDataGenerator(Dataset):
     def __init__(self,
                  path_images: str,
                  path_annotations: str,
@@ -127,16 +130,18 @@ class AirDataGenerator(Dataset):
            (self.num_classes, heatmap_height, heatmap_width), dtype=np.float32)
         for (x1, y1, x2, y2), cls_channel in zip(target['boxes'], target['labels']):
              w, h = abs(x2 - x1), abs(y2 - y1)
-             xc, yc = x1 + int(0.5*w), y1 + int(h*0.5)
+             xc, yc = x1 + w//2, y1 + h//2
              scaled_xc = int(xc * 1/self.down_ratio)
              scaled_yc = int(yc * 1/self.down_ratio)
-             draw_msra_gaussian(heatmap, cls_channel, (scaled_xc, scaled_yc), sigma=np.clip(w * h, 2, 4))
+             # plt.imshow(image_transformed.permute(1, 2, 0).numpy())
+             # plt.show()
+             # draw_msra_gaussian(heatmap, cls_channel, (scaled_xc, scaled_yc), sigma=np.clip(w * h, 2, 4))
         # draw regression squares
         wh_regr = np.zeros((2, heatmap_height, heatmap_width), dtype=np.float32)
         regrs = target['boxes'][:, 2:] - target['boxes'][:, :2]  # width, height
         for r, (x1, y1, x2, y2) in zip(regrs, target['boxes']):
              w, h = abs(x2 - x1), abs(y2 - y1)
-             xc, yc = x1 + int(w*0.5), y1 + int(h*0.5)
+             xc, yc = x1 + w//2, y1 + h//2
              scaled_xc = int(xc * 1/self.down_ratio)
              scaled_yc = int(yc * 1/self.down_ratio)
              for i in range(-2, 2 + 1):
@@ -149,6 +154,12 @@ class AirDataGenerator(Dataset):
                          pass
         wh_regr[0] = wh_regr[0].T
         wh_regr[1] = wh_regr[1].T
+
+        plt.imshow(wh_regr[0])
+        plt.show()
+
+        plt.imshow(wh_regr[1])
+        plt.imshow()
 
         target["heatmap"] = torch.from_numpy(heatmap)
         target["wh_regr"] = torch.from_numpy(wh_regr)
