@@ -1,12 +1,8 @@
-# flake8: noqa
 from mean_average_precision import MetricBuilder
 import numpy as np
-
 import torch
 import torch.nn.functional as F
-
 from catalyst.core.callback import Callback, CallbackOrder
-
 from Utils import change_box_order, nms_filter
 
 
@@ -80,7 +76,7 @@ def process_ssd_output(
         yield pred_sample, gt_sample
 
 
-def pred2box(heatmap, regr, threshold=0.5, scale=4, input_size=512):
+def pred2box(heatmap, regr, threshold=0.5, scale=4, input_size=512, mode = "train"):
     """Convert model output to bounding boxes.
 
     Args:
@@ -103,12 +99,18 @@ def pred2box(heatmap, regr, threshold=0.5, scale=4, input_size=512):
         scores[i] = heatmap[y, x]
         # x, y in segmentation scales -> upscale outputs
         sx, sy = int(x * scale), int(y * scale)
-        w, h = (regr[:, y, x]).astype(int)
+        w, h = np.abs(regr[:, y, x] * input_size).astype(int)
         # all boxes coordinates must be in range (0, input_size)
-        boxes[i, 0] = sx - w // 2
-        boxes[i, 1] = sy - h // 2
-        boxes[i, 2] = sx + w // 2
-        boxes[i, 3] = sy + h // 2
+        if mode == "train":
+            boxes[i, 0] = sx - w // 2
+            boxes[i, 1] = sy - h // 2
+            boxes[i, 2] = sx + w // 2
+            boxes[i, 3] = sy + h // 2
+        else:
+            boxes[i, 0] = sx - w // 2 + w//2
+            boxes[i, 1] = sy - h // 2 + h//2
+            boxes[i, 2] = sx + w // 2 + w//2
+            boxes[i, 3] = sy + h // 2 + h//2
     return np.array(boxes), np.array(scores)
 
 
@@ -141,6 +143,7 @@ def process_centernet_output(
     """
     batch_size = predicted_heatmap.size(0)
 
+    # predicted_regression = predicted_regression.sigmoid() # new stoke of code
     hm = predicted_heatmap.sigmoid()
     pooled = F.max_pool2d(hm, kernel_size=(3, 3), stride=1, padding=1)
     hm *= torch.logical_and(
@@ -157,15 +160,15 @@ def process_centernet_output(
         for cls_idx in range(hm_numpy.shape[1]):
             # build predictions
             cls_boxes, cls_scores = pred2box(
-                hm_numpy[i, cls_idx], reg_numpy[i], threshold=0, scale=4, input_size=512
+                hm_numpy[i, cls_idx], reg_numpy[i], threshold=0, scale=4, input_size=512, mode=mode
             )
 
             # skip empty label predictions
             if cls_scores.shape[0] == 0:
                 continue
 
-            # cls_boxes = cls_boxes / 512.0 # old code
-            cls_boxes = cls_boxes * 1.0 # new code (numpy.core._exceptions._ArrayMemoryError:
+            cls_boxes = cls_boxes / 512.0 # old code
+            # cls_boxes = cls_boxes * 1.0 # new code (numpy.core._exceptions._ArrayMemoryError:
             # Unable to allocate 2.70 MiB for an array with shape (88504, 4) and data type float64)
 
             cls_boxes, cls_classes, cls_scores = nms_filter(
@@ -315,7 +318,7 @@ class DetectionMeanAveragePrecision(Callback):
                 self.metric_fn.add(predicted_sample, ground_truth_sample)
         elif self.output_type == "centernet":
             p_heatmap = runner.batch["predicted_heatmap"]
-            gt_box = runner.batch["boxes"]
+            gt_box = runner.batch["bboxes"]
             p_regression = runner.batch["predicted_regression"]
             gt_labels = runner.batch["labels"]
             for predicted_sample, ground_truth_sample in process_centernet_output(
